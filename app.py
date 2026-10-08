@@ -137,17 +137,31 @@ def screen_upload(cid):
         screen_buffers[cid] = data
     return jsonify({"status": "ok"})
 
+@app.route("/frame/<cid>")
+def frame(cid):
+    with screen_lock:
+        frame = screen_buffers.get(cid)
+    if not frame:
+        return Response(b"", mimetype="image/jpeg")
+    return Response(frame, mimetype="image/jpeg",
+                    headers={"Cache-Control": "no-cache"})
+
 @app.route("/stream/<cid>")
 def stream(cid):
     def gen():
-        while True:
+        start = time.time()
+        while time.time() - start < 25:
             with screen_lock:
                 frame = screen_buffers.get(cid)
             if frame:
                 yield (b"--frame\r\n"
-                       b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+                       b"Content-Type: image/jpeg\r\n"
+                       b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
+                       + frame + b"\r\n")
             time.sleep(0.1)
-    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+        yield b"--frame--\r\n"
+    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 @app.route("/input/<cid>", methods=["POST"])
 def input_event(cid):
