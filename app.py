@@ -150,15 +150,17 @@ def frame(cid):
 def stream(cid):
     def gen():
         start = time.time()
+        last_sent = None
         while time.time() - start < 25:
             with screen_lock:
                 frame = screen_buffers.get(cid)
-            if frame:
+            if frame and frame is not last_sent:
+                last_sent = frame
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n"
                        b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
                        + frame + b"\r\n")
-            time.sleep(0.1)
+            time.sleep(0.03)
         yield b"--frame--\r\n"
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
