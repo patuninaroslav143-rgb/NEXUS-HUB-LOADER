@@ -151,10 +151,10 @@ def screen_upload(cid):
 @app.route("/frame/<cid>")
 def frame(cid):
     with screen_lock:
-        frame = screen_buffers.get(cid)
-    if not frame:
+        f = screen_buffers.get(cid)
+    if not f:
         return Response(b"", mimetype="image/jpeg")
-    return Response(frame, mimetype="image/jpeg",
+    return Response(f, mimetype="image/jpeg",
                     headers={"Cache-Control": "no-cache"})
 
 @app.route("/stream/<cid>")
@@ -164,13 +164,13 @@ def stream(cid):
         last_sent = None
         while time.time() - start < 25:
             with screen_lock:
-                frame = screen_buffers.get(cid)
-            if frame and frame is not last_sent:
-                last_sent = frame
+                f = screen_buffers.get(cid)
+            if f and f is not last_sent:
+                last_sent = f
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n"
-                       b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
-                       + frame + b"\r\n")
+                       b"Content-Length: " + str(len(f)).encode() + b"\r\n\r\n"
+                       + f + b"\r\n")
             time.sleep(0.03)
         yield b"--frame--\r\n"
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame",
